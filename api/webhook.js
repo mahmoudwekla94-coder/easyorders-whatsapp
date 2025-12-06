@@ -16,10 +16,7 @@ export default async function handler(req, res) {
 
     console.log("Incoming EasyOrders Payload:", JSON.stringify(data, null, 2));
 
-    // ===============================
-    // 1) استخراج بيانات الطلب
-    // ===============================
-
+    // ============ 1) استخراج بيانات الطلب ============
     const customerName =
       data.full_name || data.name || data.customer_name || "عميلنا العزيز";
 
@@ -29,36 +26,42 @@ export default async function handler(req, res) {
     const orderId = data.short_id || data.order_id || data.id || "";
     const address = data.address || data.government || "لم يتم إدخال عنوان";
 
-    // اسم المنتج من أول عنصر في السلة
     const productName =
       data.cart_items?.[0]?.product?.name || "المنتج";
 
-    // ندمج العنوان + اسم المنتج في متغير واحد يروح لـ {{3}}
-    const thirdParamText = `العنوان: ${address}\nالمنتج: ${productName}`;
+    // {{3}} = سطر واحد بدون نيو لاين
+    const thirdParamText = `العنوان: ${address} - المنتج: ${productName}`;
 
-    // ===============================
-    // 2) تنظيف وتوحيد صيغة رقم الهاتف
-    // ===============================
+    // دالة لتنضيف الباراميتر من النيو لاين / التاب / المسافات الكتير
+    const cleanParam = (text) => {
+      if (!text) return "";
+      return text
+        .toString()
+        .replace(/[\r\n\t]+/g, " ") // نشيل \n \r \t
+        .replace(/ {2,}/g, " ")    // نقلل المسافات المتكررة
+        .trim();
+    };
 
+    // ============ 2) تنظيف رقم الموبايل ============
     let raw = customerPhone.toString().replace(/[^0-9]/g, "");
 
-    // 🔹 السعودية
+    // السعودية
     if (raw.startsWith("05") && raw.length === 10) {
       raw = "966" + raw.substring(1);
     }
-    // 🔹 مصر
+    // مصر
     else if (raw.startsWith("01") && raw.length === 11) {
       raw = "20" + raw.substring(1);
     }
-    // 🔹 السودان
+    // السودان
     else if (raw.startsWith("09") && raw.length === 10) {
       raw = "249" + raw.substring(1);
     }
-    // 🔹 اليمن
+    // اليمن
     else if (raw.startsWith("7") && raw.length === 9) {
       raw = "967" + raw;
     }
-    // 🔹 أرقام دولية جاهزة
+    // أرقام دولية جاهزة
     else if (
       raw.startsWith("20") ||
       raw.startsWith("966") ||
@@ -73,9 +76,7 @@ export default async function handler(req, res) {
     const normalizedPhone = raw;
     console.log("Normalized Phone:", normalizedPhone);
 
-    // ===============================
-    // 3) متغيرات البيئة
-    // ===============================
+    // ============ 3) متغيرات البيئة ============
     const WHATSAPP_TOKEN = process.env.WHATSAPP_TOKEN;
     const WHATSAPP_PHONE_ID = process.env.WHATSAPP_PHONE_ID;
 
@@ -84,33 +85,28 @@ export default async function handler(req, res) {
       return res.status(500).json({ error: "missing_env" });
     }
 
-    // ===============================
-    // 4) إعداد Payload للتمبلت
-    // ===============================
-
+    // ============ 4) إعداد Payload للتمبلت ============
     const payload = {
       messaging_product: "whatsapp",
       to: normalizedPhone,
       type: "template",
       template: {
-        name: "order_confirmation", // اسم التمبلت اللي اتقبل في Meta
-        language: { code: "en" }, // زي ما ظاهر في لوحة التمبلت
+        name: "order_confirmation", // اسم التمبلت في Meta
+        language: { code: "en" },   // زي ما ظاهر عندك في التمبلت
         components: [
           {
             type: "body",
             parameters: [
-              { type: "text", text: customerName },        // {{1}}
-              { type: "text", text: String(orderId) },      // {{2}}
-              { type: "text", text: thirdParamText },       // {{3}}
+              { type: "text", text: cleanParam(customerName) },     // {{1}}
+              { type: "text", text: cleanParam(String(orderId)) },  // {{2}}
+              { type: "text", text: cleanParam(thirdParamText) },   // {{3}}
             ],
           },
         ],
       },
     };
 
-    // ===============================
-    // 5) إرسال الرسالة إلى WhatsApp API
-    // ===============================
+    // ============ 5) إرسال الرسالة إلى WhatsApp API ============
     const waRes = await fetch(
       `https://graph.facebook.com/v21.0/${WHATSAPP_PHONE_ID}/messages`,
       {
@@ -131,7 +127,6 @@ export default async function handler(req, res) {
       return res.status(500).json({ error: "whatsapp_error", waData });
     }
 
-    // 🔵 Successful send
     return res.status(200).json({ status: "sent", waData });
   } catch (err) {
     console.error("❌ Webhook Error:", err);
