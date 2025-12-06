@@ -6,6 +6,7 @@ export default async function handler(req, res) {
     return res.status(200).send("EasyOrders WhatsApp Webhook Running ✅");
   }
 
+  // 🔵 Only allow POST
   if (req.method !== "POST") {
     return res.status(405).json({ error: "Method not allowed" });
   }
@@ -27,6 +28,13 @@ export default async function handler(req, res) {
 
     const orderId = data.short_id || data.order_id || data.id || "";
     const address = data.address || data.government || "لم يتم إدخال عنوان";
+
+    // اسم المنتج من أول عنصر في السلة
+    const productName =
+      data.cart_items?.[0]?.product?.name || "المنتج";
+
+    // ندمج العنوان + اسم المنتج في متغير واحد يروح لـ {{3}}
+    const thirdParamText = `العنوان: ${address}\nالمنتج: ${productName}`;
 
     // ===============================
     // 2) تنظيف وتوحيد صيغة رقم الهاتف
@@ -57,6 +65,7 @@ export default async function handler(req, res) {
       raw.startsWith("249") ||
       raw.startsWith("967")
     ) {
+      // سيبه زي ما هو
     } else {
       console.log("❗ رقم غير معروف الدولة، سيتم استخدامه كما هو:", raw);
     }
@@ -84,15 +93,15 @@ export default async function handler(req, res) {
       to: normalizedPhone,
       type: "template",
       template: {
-        name: "order_confirmation", // اسم التمبلت
-        language: { code: "en" }, // ⚠️ لازم تكون en زي ما ظهر في لوحة التمبلت
+        name: "order_confirmation", // اسم التمبلت اللي اتقبل في Meta
+        language: { code: "en" }, // زي ما ظاهر في لوحة التمبلت
         components: [
           {
             type: "body",
             parameters: [
-              { type: "text", text: customerName }, // {{1}}
-              { type: "text", text: String(orderId) }, // {{2}}
-              { type: "text", text: address }, // {{3}}
+              { type: "text", text: customerName },        // {{1}}
+              { type: "text", text: String(orderId) },      // {{2}}
+              { type: "text", text: thirdParamText },       // {{3}}
             ],
           },
         ],
@@ -122,6 +131,7 @@ export default async function handler(req, res) {
       return res.status(500).json({ error: "whatsapp_error", waData });
     }
 
+    // 🔵 Successful send
     return res.status(200).json({ status: "sent", waData });
   } catch (err) {
     console.error("❌ Webhook Error:", err);
