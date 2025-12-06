@@ -6,7 +6,6 @@ export default async function handler(req, res) {
     return res.status(200).send("EasyOrders WhatsApp Webhook Running ✅");
   }
 
-  // 🔵 Only allow POST
   if (req.method !== "POST") {
     return res.status(405).json({ error: "Method not allowed" });
   }
@@ -21,16 +20,10 @@ export default async function handler(req, res) {
     // ===============================
 
     const customerName =
-      data.full_name ||
-      data.name ||
-      data.customer_name ||
-      "عميلنا العزيز";
+      data.full_name || data.name || data.customer_name || "عميلنا العزيز";
 
     let customerPhone =
-      data.phone ||
-      data.phone_alt ||
-      data.customer_phone ||
-      "";
+      data.phone || data.phone_alt || data.customer_phone || "";
 
     const orderId = data.short_id || data.order_id || data.id || "";
     const address = data.address || data.government || "لم يتم إدخال عنوان";
@@ -57,7 +50,7 @@ export default async function handler(req, res) {
     else if (raw.startsWith("7") && raw.length === 9) {
       raw = "967" + raw;
     }
-    // 🔹 لو الرقم جاهز دوليًا اتركه كما هو
+    // 🔹 أرقام دولية جاهزة
     else if (
       raw.startsWith("20") ||
       raw.startsWith("966") ||
@@ -72,7 +65,7 @@ export default async function handler(req, res) {
     console.log("Normalized Phone:", normalizedPhone);
 
     // ===============================
-    // 3) متغيرات واتساب من Vercel
+    // 3) متغيرات البيئة
     // ===============================
     const WHATSAPP_TOKEN = process.env.WHATSAPP_TOKEN;
     const WHATSAPP_PHONE_ID = process.env.WHATSAPP_PHONE_ID;
@@ -92,7 +85,7 @@ export default async function handler(req, res) {
       type: "template",
       template: {
         name: "order_confirmation", // اسم التمبلت
-        language: { code: "ar" }, // عربي — غيّرها لـ en لو عايز إنجليزي
+        language: { code: "en" }, // ⚠️ لازم تكون en زي ما ظهر في لوحة التمبلت
         components: [
           {
             type: "body",
@@ -129,7 +122,6 @@ export default async function handler(req, res) {
       return res.status(500).json({ error: "whatsapp_error", waData });
     }
 
-    // 🔵 Successful send
     return res.status(200).json({ status: "sent", waData });
   } catch (err) {
     console.error("❌ Webhook Error:", err);
