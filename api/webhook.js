@@ -14,6 +14,11 @@ async function webhook(req, res) {
   try {
     const data = req.body || {};
 
+    // 🆕 0) قراءة التاج من الويبهوك URL ?storeTag=EQ / GZ / BR
+    const storeTagRaw = (req.query && req.query.storeTag) || "";
+    const storeTag = storeTagRaw ? `[${storeTagRaw}]` : "";
+    console.log("🏪 Store Tag:", storeTagRaw || "NO_TAG");
+
     // -------------------------
     // 1) بيانات العميل والطلب
     // -------------------------
@@ -103,9 +108,9 @@ async function webhook(req, res) {
       phone_number: normalizedPhone,
       template_name: "order_confirmation",
       template_language: "en", // نفس اللغة اللي في التمبلت
-      field_1: cleanParam(customerName),            // {{1}} اسم العميل
-      field_2: cleanParam(String(orderId)),         // {{2}} رقم الطلب
-      field_3: cleanParam(addressAndProduct),       // {{3}} العنوان + المنتج + الكمية + السعر
+      field_1: cleanParam(customerName),                        // {{1}} اسم العميل
+      field_2: cleanParam(`${orderId} ${storeTag}`.trim()),     // 🆕 {{2}} رقم الطلب + [EQ]/[GZ]/[BR]
+      field_3: cleanParam(addressAndProduct),                   // {{3}} العنوان + المنتج + الكمية + السعر
       contact: {
         first_name: cleanParam(customerName),
         phone_number: normalizedPhone,
