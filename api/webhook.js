@@ -6,13 +6,13 @@ async function webhook(req, res) {
     return res.status(200).send("Webhook Running ✅");
   }
 
-  // ✅ Allow only POST for EasyOrders
+  // ✅ Allow only POST (EasyOrders)
   if (req.method !== "POST") {
     return res.status(405).json({ error: "Method not allowed" });
   }
 
   try {
-    const data = req.body;
+    const data = req.body || {};
 
     // -------------------------
     // 1) بيانات العميل والطلب
@@ -26,7 +26,34 @@ async function webhook(req, res) {
     const orderId = data.short_id || data.order_id || data.id || "";
     const address = data.address || data.government || "";
 
-    // تنظيف الباراميترات للتمبلت (مفيش سطور جديدة ولا Tabs)
+    // 🔹 أول عنصر في السلة
+    const firstItem = data.cart_items?.[0] || {};
+    const productName = firstItem.product?.name || "منتجك";
+    const quantity = firstItem.quantity != null ? firstItem.quantity : 1;
+
+    // السعر: نحاول نجيبه من الآتي بالترتيب
+    const price =
+      firstItem.price != null
+        ? firstItem.price
+        : data.total_cost != null
+        ? data.total_cost
+        : data.cost != null
+        ? data.cost
+        : "";
+
+    // تركيب المتغير {{3}} = العنوان + المنتج + الكمية + السعر
+    let addressAndProduct = address || "";
+    if (productName) {
+      addressAndProduct += (addressAndProduct ? " - " : "") + productName;
+    }
+    if (quantity) {
+      addressAndProduct += ` - الكمية: ${quantity}`;
+    }
+    if (price !== "") {
+      addressAndProduct += ` - السعر: ${price}`;
+    }
+
+    // تنظيف الباراميترات (مفيش سطور جديدة أو Tabs)
     const cleanParam = (text) => {
       if (!text) return "";
       return text.toString().replace(/[\r\n\t]+/g, " ").trim();
@@ -58,7 +85,7 @@ async function webhook(req, res) {
     console.log("📞 Normalized Phone:", normalizedPhone);
 
     // -------------------------
-    // 3) متغيرات الـ SaaS (Paramedics)
+    // 3) متغيرات SaaS (Paramedics)
     // -------------------------
     const API_BASE_URL = process.env.SAAS_API_BASE_URL;
     const VENDOR_UID = process.env.SAAS_VENDOR_UID;
@@ -75,10 +102,10 @@ async function webhook(req, res) {
     const payload = {
       phone_number: normalizedPhone,
       template_name: "order_confirmation",
-      template_language: "en", // التمبلت اللي عملناه EN في الداشبورد
-      field_1: cleanParam(customerName),       // {{1}} اسم العميل
-      field_2: cleanParam(String(orderId)),    // {{2}} رقم الطلب
-      field_3: cleanParam(address),            // {{3}} العنوان
+      template_language: "en", // نفس اللغة اللي في التمبلت
+      field_1: cleanParam(customerName),            // {{1}} اسم العميل
+      field_2: cleanParam(String(orderId)),         // {{2}} رقم الطلب
+      field_3: cleanParam(addressAndProduct),       // {{3}} العنوان + المنتج + الكمية + السعر
       contact: {
         first_name: cleanParam(customerName),
         phone_number: normalizedPhone,
@@ -116,5 +143,5 @@ async function webhook(req, res) {
   }
 }
 
-// ❗ أهم سطر: التصدير بصيغة CommonJS
+// ✅ تصدير بصيغة CommonJS عشان Vercel
 module.exports = webhook;
