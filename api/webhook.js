@@ -1,12 +1,8 @@
-// api/webhook.js
-
 export default async function handler(req, res) {
-  // 🔵 Health Check
   if (req.method === "GET") {
-    return res.status(200).send("EasyOrders WhatsApp Webhook Running ✅");
+    return res.status(200).send("Webhook Running ✅");
   }
 
-  // 🔵 Only allow POST
   if (req.method !== "POST") {
     return res.status(405).json({ error: "Method not allowed" });
   }
@@ -14,122 +10,70 @@ export default async function handler(req, res) {
   try {
     const data = req.body;
 
-    console.log("Incoming EasyOrders Payload:", JSON.stringify(data, null, 2));
-
-    // ============ 1) استخراج بيانات الطلب ============
-    const customerName =
-      data.full_name || data.name || data.customer_name || "عميلنا العزيز";
-
-    let customerPhone =
-      data.phone || data.phone_alt || data.customer_phone || "";
-
+    const customerName = data.full_name || data.name || data.customer_name || "عميلنا العزيز";
+    const customerPhone = data.phone || data.phone_alt || data.customer_phone || "";
     const orderId = data.short_id || data.order_id || data.id || "";
-    const address = data.address || data.government || "لم يتم إدخال عنوان";
+    const address = data.address || data.government || "";
 
-    const productName =
-      data.cart_items?.[0]?.product?.name || "المنتج";
-
-    // {{3}} = سطر واحد بدون نيو لاين
-    const thirdParamText = `العنوان: ${address} - المنتج: ${productName}`;
-
-    // دالة لتنضيف الباراميتر من النيو لاين / التاب / المسافات الكتير
     const cleanParam = (text) => {
       if (!text) return "";
-      return text
-        .toString()
-        .replace(/[\r\n\t]+/g, " ") // نشيل \n \r \t
-        .replace(/ {2,}/g, " ")    // نقلل المسافات المتكررة
-        .trim();
+      return text.toString().replace(/[\r\n\t]+/g, " ").trim();
     };
 
-    // ============ 2) تنظيف رقم الموبايل ============
     let raw = customerPhone.toString().replace(/[^0-9]/g, "");
 
-    // السعودية
-    if (raw.startsWith("05") && raw.length === 10) {
-      raw = "966" + raw.substring(1);
-    }
-    // مصر
-    else if (raw.startsWith("01") && raw.length === 11) {
-      raw = "20" + raw.substring(1);
-    }
-    // السودان
-    else if (raw.startsWith("09") && raw.length === 10) {
-      raw = "249" + raw.substring(1);
-    }
-    // اليمن
-    else if (raw.startsWith("7") && raw.length === 9) {
-      raw = "967" + raw;
-    }
-    // أرقام دولية جاهزة
-    else if (
-      raw.startsWith("20") ||
-      raw.startsWith("966") ||
-      raw.startsWith("249") ||
-      raw.startsWith("967")
-    ) {
-      // سيبه زي ما هو
-    } else {
-      console.log("❗ رقم غير معروف الدولة، سيتم استخدامه كما هو:", raw);
-    }
+    if (raw.startsWith("05") && raw.length === 10) raw = "966" + raw.substring(1);
+    else if (raw.startsWith("01") && raw.length === 11) raw = "20" + raw.substring(1);
+    else if (raw.startsWith("09") && raw.length === 10) raw = "249" + raw.substring(1);
+    else if (raw.startsWith("7") && raw.length === 9) raw = "967" + raw;
 
     const normalizedPhone = raw;
-    console.log("Normalized Phone:", normalizedPhone);
 
-    // ============ 3) متغيرات البيئة ============
-    const WHATSAPP_TOKEN = process.env.WHATSAPP_TOKEN;
-    const WHATSAPP_PHONE_ID = process.env.WHATSAPP_PHONE_ID;
+    const API_BASE_URL = process.env.SAAS_API_BASE_URL;
+    const VENDOR_UID = process.env.SAAS_VENDOR_UID;
+    const API_TOKEN = process.env.SAAS_API_TOKEN;
 
-    if (!WHATSAPP_TOKEN || !WHATSAPP_PHONE_ID) {
-      console.error("❌ Missing WhatsApp Env Vars");
+    if (!API_BASE_URL || !VENDOR_UID || !API_TOKEN) {
+      console.error("Missing Environment Variables");
       return res.status(500).json({ error: "missing_env" });
     }
 
-    // ============ 4) إعداد Payload للتمبلت ============
     const payload = {
-      messaging_product: "whatsapp",
-      to: normalizedPhone,
-      type: "template",
-      template: {
-        name: "order_confirmation", // اسم التمبلت في Meta
-        language: { code: "en" },   // زي ما ظاهر عندك في التمبلت
-        components: [
-          {
-            type: "body",
-            parameters: [
-              { type: "text", text: cleanParam(customerName) },     // {{1}}
-              { type: "text", text: cleanParam(String(orderId)) },  // {{2}}
-              { type: "text", text: cleanParam(thirdParamText) },   // {{3}}
-            ],
-          },
-        ],
-      },
+      phone_number: normalizedPhone,
+      template_name: "order_confirmation",
+      template_language: "en",
+      field_1: cleanParam(customerName),
+      field_2: cleanParam(String(orderId)),
+      field_3: cleanParam(address),
+      contact: {
+        first_name: cleanParam(customerName),
+        phone_number: normalizedPhone,
+        country: "auto"
+      }
     };
 
-    // ============ 5) إرسال الرسالة إلى WhatsApp API ============
-    const waRes = await fetch(
-      `https://graph.facebook.com/v21.0/${WHATSAPP_PHONE_ID}/messages`,
-      {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${WHATSAPP_TOKEN}`,
-        },
-        body: JSON.stringify(payload),
-      }
-    );
+    const endpoint = ${API_BASE_URL}/${VENDOR_UID}/contact/send-template-message;
 
-    const waData = await waRes.json();
-    console.log("📨 WhatsApp API Response:", waData);
+    const saasRes = await fetch(endpoint, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": Bearer ${API_TOKEN},
+      },
+      body: JSON.stringify(payload),
+    });
 
-    if (!waRes.ok) {
-      console.error("❌ WhatsApp Error:", waData);
-      return res.status(500).json({ error: "whatsapp_error", waData });
+    const responseData = await saasRes.json().catch(() => null);
+
+    if (!saasRes.ok) {
+      console.error("SaaS API Error:", responseData);
+      return res.status(500).json({ error: "saas_api_error", details: responseData });
     }
 
-    return res.status(200).json({ status: "sent", waData });
+    return res.status(200).json({ status: "sent", data: responseData });
+
   } catch (err) {
-    console.error("❌ Webhook Error:", err);
+    console.error("Webhook Error:", err);
     return res.status(500).json({ error: "internal_error" });
   }
 }
