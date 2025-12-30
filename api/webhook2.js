@@ -22,9 +22,10 @@ async function webhook2(req, res) {
     const data = req.body || {};
 
     // =========================
-    // 1) Store Tag من URL
+    // 1) Store Tag (اختياري)
     // =========================
-    const storeTagRaw = (req.query && req.query.storeTag) || "";
+    const storeTagRaw =
+      (req.query && req.query.storeTag) || process.env.STORE_TAG_2 || "";
     const storeTag = storeTagRaw ? `[${storeTagRaw}]` : "";
     console.log("🏪 Store Tag:", storeTagRaw || "NO_TAG");
 
@@ -70,7 +71,7 @@ async function webhook2(req, res) {
         : "";
 
     // =========================
-    // 3) تجهيز المتغير {{3}}
+    // 3) تجهيز {{3}}
     // =========================
     let addressAndProduct = address || "";
 
@@ -136,15 +137,14 @@ async function webhook2(req, res) {
 
     // =========================
     // 6) Payload التمبلت
-    // first_utility / ar
     // =========================
     const payload = {
       phone_number: normalizedPhone,
       template_name: "first_utility",
-      template_language: "ar",
-      field_1: cleanParam(customerName),                    // {1}
-      field_2: cleanParam(`${orderId} ${storeTag}`.trim()), // {2}
-      field_3: cleanParam(addressAndProduct),               // {3}
+      template_language: "Arabic", // 🔥 مهم جدًا
+      field_1: cleanParam(customerName),
+      field_2: cleanParam(`${orderId} ${storeTag}`.trim()),
+      field_3: cleanParam(addressAndProduct),
       contact: {
         first_name: cleanParam(customerName),
         phone_number: normalizedPhone,
@@ -166,6 +166,15 @@ async function webhook2(req, res) {
     });
 
     const responseData = await saasRes.json().catch(() => null);
+
+    // Paramedics أحيانًا يرجع 200 + failed
+    if (responseData?.result === "failed") {
+      console.error("❌ SaaS Failed (webhook2):", responseData);
+      return res.status(500).json({
+        error: "saas_failed",
+        details: responseData,
+      });
+    }
 
     if (!saasRes.ok) {
       console.error("❌ SaaS Error (webhook2):", responseData);
