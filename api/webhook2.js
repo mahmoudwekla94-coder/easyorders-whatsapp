@@ -3,7 +3,7 @@
 async function webhook(req, res) {
   // ✅ Health Check
   if (req.method === "GET") {
-    return res.status(200).send("Webhook Running ✅");
+    return res.status(200).send("Webhook2 Running ✅");
   }
 
   // ✅ Allow only POST (EasyOrders)
@@ -23,7 +23,7 @@ async function webhook(req, res) {
     // 1) بيانات العميل والطلب
     // -------------------------
     const customerName =
-      data.full_name || data.name || data.customer_name || "عميلنا العزيز";
+      data.full_name || data.name || data.customer_name || "Customer";
 
     const customerPhone =
       data.phone || data.phone_alt || data.customer_phone || "";
@@ -33,9 +33,10 @@ async function webhook(req, res) {
 
     // 🔹 أول عنصر في السلة
     const firstItem = data.cart_items?.[0] || {};
-    const productName = firstItem.product?.name || "منتجك";
+    const productName = firstItem.product?.name || "Product";
     const quantity = firstItem.quantity != null ? firstItem.quantity : 1;
 
+    // السعر: نحاول نجيبه من الآتي بالترتيب
     const price =
       firstItem.price != null
         ? firstItem.price
@@ -45,15 +46,17 @@ async function webhook(req, res) {
         ? data.cost
         : "";
 
+    // ✅ EN format for {{3}}
+    // Address - Product - Qty - Price
     let addressAndProduct = address || "";
     if (productName) {
       addressAndProduct += (addressAndProduct ? " - " : "") + productName;
     }
-    if (quantity) {
-      addressAndProduct += ` - الكمية: ${quantity}`;
+    if (quantity != null) {
+      addressAndProduct += ` - Qty: ${quantity}`;
     }
     if (price !== "") {
-      addressAndProduct += ` - السعر: ${price}`;
+      addressAndProduct += ` - Price: ${price}`;
     }
 
     // تنظيف الباراميترات (مفيش سطور جديدة أو Tabs)
@@ -100,27 +103,15 @@ async function webhook(req, res) {
     }
 
     // -------------------------
-    // ✅ 4) اختيار التمبلت الصح (عربي/إنجليزي)
-    // -------------------------
-    const isArabicText = (str = "") => /[\u0600-\u06FF]/.test(str);
-
-    const blob = `${customerName} ${addressAndProduct}`; // بنحدد اللغة من المحتوى
-    const isArabic = isArabicText(blob);
-
-    // ✅ الأسماء "زي ما هي عندك" في Paramedics (حتى لو فيها typo)
-    const template_name = isArabic ? "first_utillty" : "1st_utillty";
-    const template_language = isArabic ? "ar" : "en";
-
-    // -------------------------
-    // 5) Payload الخاص بالتمبلت
+    // ✅ 4) Payload: 1st_utillty · English
     // -------------------------
     const payload = {
       phone_number: normalizedPhone,
-      template_name,
-      template_language,
-      field_1: cleanParam(customerName),                        // {{1}} اسم العميل
-      field_2: cleanParam(`${orderId} ${storeTag}`.trim()),     // {{2}} رقم الطلب + [EQ]/...
-      field_3: cleanParam(addressAndProduct),                   // {{3}} تفاصيل الطلب
+      template_name: "1st_utillty",
+      template_language: "en",
+      field_1: cleanParam(customerName),                    // {{1}} name
+      field_2: cleanParam(`${orderId} ${storeTag}`.trim()), // {{2}} order + [EQ]
+      field_3: cleanParam(addressAndProduct),               // {{3}} details
       contact: {
         first_name: cleanParam(customerName),
         phone_number: normalizedPhone,
@@ -150,12 +141,13 @@ async function webhook(req, res) {
         .json({ error: "saas_api_error", details: responseData });
     }
 
-    console.log("✅ SaaS Response:", responseData);
+    console.log("✅ SaaS Response (webhook2):", responseData);
     return res.status(200).json({ status: "sent", data: responseData });
   } catch (err) {
-    console.error("❌ Webhook Error:", err);
+    console.error("❌ Webhook2 Error:", err);
     return res.status(500).json({ error: "internal_error" });
   }
 }
 
+// ✅ تصدير بصيغة CommonJS عشان Vercel
 module.exports = webhook;
