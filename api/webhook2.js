@@ -22,21 +22,20 @@ async function webhook2(req, res) {
     const data = req.body || {};
 
     // =========================
-    // 1) Store Tag (اختياري)
+    // 1) Store Tag من URL
     // =========================
-    const storeTagRaw =
-      (req.query && req.query.storeTag) || process.env.STORE_TAG_2 || "";
+    const storeTagRaw = req.query?.storeTag || "";
     const storeTag = storeTagRaw ? `[${storeTagRaw}]` : "";
     console.log("🏪 Store Tag:", storeTagRaw || "NO_TAG");
 
     // =========================
-    // 2) بيانات العميل والطلب
+    // 2) بيانات العميل
     // =========================
     const customerName =
       data.full_name ||
       data.name ||
       data.customer_name ||
-      "عميلنا العزيز";
+      "Customer";
 
     const customerPhone =
       data.phone ||
@@ -55,74 +54,48 @@ async function webhook2(req, res) {
       data.government ||
       "";
 
-    // أول منتج
+    // =========================
+    // 3) المنتج
+    // =========================
     const firstItem = data.cart_items?.[0] || {};
-    const productName = firstItem.product?.name || "منتجك";
-    const quantity =
-      firstItem.quantity != null ? firstItem.quantity : 1;
+    const productName = firstItem.product?.name || "Product";
+    const quantity = firstItem.quantity ?? 1;
 
     const price =
-      firstItem.price != null
-        ? firstItem.price
-        : data.total_cost != null
-        ? data.total_cost
-        : data.cost != null
-        ? data.cost
-        : "";
+      firstItem.price ??
+      data.total_cost ??
+      data.cost ??
+      "";
 
-    // =========================
-    // 3) تجهيز {{3}}
-    // =========================
-    let addressAndProduct = address || "";
+    let addressAndProduct = address;
 
     if (productName) {
-      addressAndProduct +=
-        (addressAndProduct ? " - " : "") + productName;
+      addressAndProduct += (addressAndProduct ? " - " : "") + productName;
     }
 
-    if (quantity) {
-      addressAndProduct += ` - الكمية: ${quantity}`;
-    }
+    addressAndProduct += ` - Qty: ${quantity}`;
 
     if (price !== "") {
-      addressAndProduct += ` - السعر: ${price}`;
+      addressAndProduct += ` - Price: ${price}`;
     }
 
-    const cleanParam = (text) => {
-      if (!text) return "";
-      return text
-        .toString()
-        .replace(/[\r\n\t]+/g, " ")
-        .trim();
-    };
+    const clean = (v) =>
+      v ? v.toString().replace(/[\r\n\t]+/g, " ").trim() : "";
 
     // =========================
     // 4) Normalize Phone
     // =========================
     let raw = customerPhone.toString().replace(/[^0-9]/g, "");
 
-    // السعودية
-    if (raw.startsWith("05") && raw.length === 10) {
-      raw = "966" + raw.substring(1);
-    }
-    // مصر
-    else if (raw.startsWith("01") && raw.length === 11) {
-      raw = "20" + raw.substring(1);
-    }
-    // السودان
-    else if (raw.startsWith("09") && raw.length === 10) {
-      raw = "249" + raw.substring(1);
-    }
-    // اليمن
-    else if (raw.startsWith("7") && raw.length === 9) {
-      raw = "967" + raw;
-    }
+    if (raw.startsWith("05") && raw.length === 10) raw = "966" + raw.slice(1);
+    else if (raw.startsWith("01") && raw.length === 11) raw = "20" + raw.slice(1);
+    else if (raw.startsWith("09") && raw.length === 10) raw = "249" + raw.slice(1);
+    else if (raw.startsWith("7") && raw.length === 9) raw = "967" + raw;
 
-    const normalizedPhone = raw;
-    console.log("📞 Normalized Phone:", normalizedPhone);
+    console.log("📞 Normalized Phone:", raw);
 
     // =========================
-    // 5) ENV الخاصة بالويبهوك2 فقط
+    // 5) ENV الخاصة بالويبهوك2
     // =========================
     const API_BASE_URL = process.env.SAAS_API_BASE_URL_2;
     const VENDOR_UID  = process.env.SAAS_VENDOR_UID_2;
@@ -130,24 +103,22 @@ async function webhook2(req, res) {
 
     if (!API_BASE_URL || !VENDOR_UID || !API_TOKEN) {
       console.error("❌ Missing ENV for webhook2");
-      return res.status(500).json({
-        error: "missing_env_webhook2",
-      });
+      return res.status(500).json({ error: "missing_env_webhook2" });
     }
 
     // =========================
-    // 6) Payload التمبلت
+    // 6) Payload (IMPORTANT)
     // =========================
     const payload = {
-      phone_number: normalizedPhone,
-      template_name: "first_utility",
-      template_language: "Arabic", // 🔥 مهم جدًا
-      field_1: cleanParam(customerName),
-      field_2: cleanParam(`${orderId} ${storeTag}`.trim()),
-      field_3: cleanParam(addressAndProduct),
+      phone_number: raw,
+      template_name: "1st_utility",
+      template_language: "en",
+      field_1: clean(customerName),
+      field_2: clean(`${orderId} ${storeTag}`),
+      field_3: clean(addressAndProduct),
       contact: {
-        first_name: cleanParam(customerName),
-        phone_number: normalizedPhone,
+        first_name: clean(customerName),
+        phone_number: raw,
         country: "auto",
       },
     };
@@ -167,8 +138,7 @@ async function webhook2(req, res) {
 
     const responseData = await saasRes.json().catch(() => null);
 
-    // Paramedics أحيانًا يرجع 200 + failed
-    if (responseData?.result === "failed") {
+    if (!saasRes.ok || responseData?.result === "failed") {
       console.error("❌ SaaS Failed (webhook2):", responseData);
       return res.status(500).json({
         error: "saas_failed",
@@ -176,24 +146,12 @@ async function webhook2(req, res) {
       });
     }
 
-    if (!saasRes.ok) {
-      console.error("❌ SaaS Error (webhook2):", responseData);
-      return res.status(500).json({
-        error: "saas_api_error",
-        details: responseData,
-      });
-    }
+    console.log("✅ SaaS Success (webhook2):", responseData);
+    return res.status(200).json({ status: "sent" });
 
-    console.log("✅ SaaS Response (webhook2):", responseData);
-    return res.status(200).json({
-      status: "sent",
-      data: responseData,
-    });
   } catch (err) {
     console.error("❌ Webhook2 Error:", err);
-    return res.status(500).json({
-      error: "internal_error",
-    });
+    return res.status(500).json({ error: "internal_error" });
   }
 }
 
