@@ -1,19 +1,12 @@
 // api/webhook2.js
 
-async function webhook2(req, res) {
-  // =========================
-  // 0) Health Check
-  // =========================
+async function webhook(req, res) {
+  // ✅ Health Check
   if (req.method === "GET") {
-    return res.status(200).json({
-      ok: true,
-      message: "Webhook2 Running ✅",
-    });
+    return res.status(200).send("Webhook Running ✅");
   }
 
-  // =========================
-  // Allow only POST
-  // =========================
+  // ✅ Allow only POST (EasyOrders)
   if (req.method !== "POST") {
     return res.status(405).json({ error: "Method not allowed" });
   }
@@ -21,111 +14,122 @@ async function webhook2(req, res) {
   try {
     const data = req.body || {};
 
-    // =========================
-    // 1) Store Tag
-    // =========================
-    const storeTagRaw = req.query?.storeTag || "";
+    // 🆕 0) قراءة التاج من الويبهوك URL ?storeTag=EQ / GZ / BR
+    const storeTagRaw = (req.query && req.query.storeTag) || "";
     const storeTag = storeTagRaw ? `[${storeTagRaw}]` : "";
     console.log("🏪 Store Tag:", storeTagRaw || "NO_TAG");
 
-    // =========================
-    // 2) بيانات العميل
-    // =========================
+    // -------------------------
+    // 1) بيانات العميل والطلب
+    // -------------------------
     const customerName =
-      data.full_name ||
-      data.name ||
-      data.customer_name ||
-      "Customer";
+      data.full_name || data.name || data.customer_name || "عميلنا العزيز";
 
     const customerPhone =
-      data.phone ||
-      data.phone_alt ||
-      data.customer_phone ||
-      "";
+      data.phone || data.phone_alt || data.customer_phone || "";
 
-    const orderId =
-      data.short_id ||
-      data.order_id ||
-      data.id ||
-      "";
+    const orderId = data.short_id || data.order_id || data.id || "";
+    const address = data.address || data.government || "";
 
-    const address =
-      data.address ||
-      data.government ||
-      "";
-
-    // =========================
-    // 3) المنتج
-    // =========================
+    // 🔹 أول عنصر في السلة
     const firstItem = data.cart_items?.[0] || {};
-    const productName = firstItem.product?.name || "Product";
-    const quantity = firstItem.quantity ?? 1;
+    const productName = firstItem.product?.name || "منتجك";
+    const quantity = firstItem.quantity != null ? firstItem.quantity : 1;
 
     const price =
-      firstItem.price ??
-      data.total_cost ??
-      data.cost ??
-      "";
+      firstItem.price != null
+        ? firstItem.price
+        : data.total_cost != null
+        ? data.total_cost
+        : data.cost != null
+        ? data.cost
+        : "";
 
     let addressAndProduct = address || "";
-
     if (productName) {
       addressAndProduct += (addressAndProduct ? " - " : "") + productName;
     }
-
-    addressAndProduct += ` - Qty: ${quantity}`;
-
+    if (quantity) {
+      addressAndProduct += ` - الكمية: ${quantity}`;
+    }
     if (price !== "") {
-      addressAndProduct += ` - Price: ${price}`;
+      addressAndProduct += ` - السعر: ${price}`;
     }
 
-    const clean = (v) =>
-      v ? v.toString().replace(/[\r\n\t]+/g, " ").trim() : "";
+    // تنظيف الباراميترات (مفيش سطور جديدة أو Tabs)
+    const cleanParam = (text) => {
+      if (!text) return "";
+      return text.toString().replace(/[\r\n\t]+/g, " ").trim();
+    };
 
-    // =========================
-    // 4) Normalize Phone
-    // =========================
+    // -------------------------
+    // 2) توحيد صيغة رقم الموبايل
+    // -------------------------
     let raw = customerPhone.toString().replace(/[^0-9]/g, "");
 
-    if (raw.startsWith("05") && raw.length === 10) raw = "966" + raw.slice(1);
-    else if (raw.startsWith("01") && raw.length === 11) raw = "20" + raw.slice(1);
-    else if (raw.startsWith("09") && raw.length === 10) raw = "249" + raw.slice(1);
-    else if (raw.startsWith("7") && raw.length === 9) raw = "967" + raw;
-
-    console.log("📞 Normalized Phone:", raw);
-
-    // =========================
-    // 5) ENV الخاصة بالويبهوك2
-    // =========================
-    const API_BASE_URL = process.env.SAAS_API_BASE_URL_2;
-    const VENDOR_UID  = process.env.SAAS_VENDOR_UID_2;
-    const API_TOKEN   = process.env.SAAS_API_TOKEN_2;
-
-    if (!API_BASE_URL || !VENDOR_UID || !API_TOKEN) {
-      console.error("❌ Missing ENV for webhook2");
-      return res.status(500).json({ error: "missing_env_webhook2" });
+    // السعودية
+    if (raw.startsWith("05") && raw.length === 10) {
+      raw = "966" + raw.substring(1);
+    }
+    // مصر
+    else if (raw.startsWith("01") && raw.length === 11) {
+      raw = "20" + raw.substring(1);
+    }
+    // السودان
+    else if (raw.startsWith("09") && raw.length === 10) {
+      raw = "249" + raw.substring(1);
+    }
+    // اليمن
+    else if (raw.startsWith("7") && raw.length === 9) {
+      raw = "967" + raw;
     }
 
-    // =========================
-    // 6) Payload
-    // =========================
+    const normalizedPhone = raw;
+    console.log("📞 Normalized Phone:", normalizedPhone);
+
+    // -------------------------
+    // 3) متغيرات SaaS (Paramedics)
+    // -------------------------
+    const API_BASE_URL = process.env.SAAS_API_BASE_URL;
+    const VENDOR_UID = process.env.SAAS_VENDOR_UID;
+    const API_TOKEN = process.env.SAAS_API_TOKEN;
+
+    if (!API_BASE_URL || !VENDOR_UID || !API_TOKEN) {
+      console.error("❌ Missing Environment Variables");
+      return res.status(500).json({ error: "missing_env" });
+    }
+
+    // -------------------------
+    // ✅ 4) اختيار التمبلت الصح (عربي/إنجليزي)
+    // -------------------------
+    const isArabicText = (str = "") => /[\u0600-\u06FF]/.test(str);
+
+    const blob = `${customerName} ${addressAndProduct}`; // بنحدد اللغة من المحتوى
+    const isArabic = isArabicText(blob);
+
+    // ✅ الأسماء "زي ما هي عندك" في Paramedics (حتى لو فيها typo)
+    const template_name = isArabic ? "first_utillty" : "1st_utillty";
+    const template_language = isArabic ? "ar" : "en";
+
+    // -------------------------
+    // 5) Payload الخاص بالتمبلت
+    // -------------------------
     const payload = {
-      phone_number: raw,
-      template_name: "1st_utility",
-      template_language: "en",
-      field_1: clean(customerName),
-      field_2: clean(`${orderId} ${storeTag}`),
-      field_3: clean(addressAndProduct),
+      phone_number: normalizedPhone,
+      template_name,
+      template_language,
+      field_1: cleanParam(customerName),                        // {{1}} اسم العميل
+      field_2: cleanParam(`${orderId} ${storeTag}`.trim()),     // {{2}} رقم الطلب + [EQ]/...
+      field_3: cleanParam(addressAndProduct),                   // {{3}} تفاصيل الطلب
       contact: {
-        first_name: clean(customerName),
-        phone_number: raw,
+        first_name: cleanParam(customerName),
+        phone_number: normalizedPhone,
         country: "auto",
       },
     };
 
     const endpoint = `${API_BASE_URL}/${VENDOR_UID}/contact/send-template-message`;
 
-    // 🔥 السطر اللي انت طالبه
     console.log("🚀 Sending to SaaS:", endpoint, payload);
 
     const saasRes = await fetch(endpoint, {
@@ -139,22 +143,19 @@ async function webhook2(req, res) {
 
     const responseData = await saasRes.json().catch(() => null);
 
-    console.log("✅ SaaS Response (webhook2):", responseData);
-
-    if (!saasRes.ok || responseData?.result === "failed") {
-      console.error("❌ SaaS Failed (webhook2):", responseData);
-      return res.status(500).json({
-        error: "saas_failed",
-        details: responseData,
-      });
+    if (!saasRes.ok) {
+      console.error("❌ SaaS API Error:", responseData);
+      return res
+        .status(500)
+        .json({ error: "saas_api_error", details: responseData });
     }
 
-    return res.status(200).json({ status: "sent" });
-
+    console.log("✅ SaaS Response:", responseData);
+    return res.status(200).json({ status: "sent", data: responseData });
   } catch (err) {
-    console.error("❌ Webhook2 Error:", err);
+    console.error("❌ Webhook Error:", err);
     return res.status(500).json({ error: "internal_error" });
   }
 }
 
-module.exports = webhook2;
+module.exports = webhook;
