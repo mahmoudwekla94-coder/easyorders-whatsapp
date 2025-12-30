@@ -22,7 +22,7 @@ async function webhook2(req, res) {
     const data = req.body || {};
 
     // =========================
-    // 1) Store Tag من URL
+    // 1) Store Tag
     // =========================
     const storeTagRaw = req.query?.storeTag || "";
     const storeTag = storeTagRaw ? `[${storeTagRaw}]` : "";
@@ -67,7 +67,7 @@ async function webhook2(req, res) {
       data.cost ??
       "";
 
-    let addressAndProduct = address;
+    let addressAndProduct = address || "";
 
     if (productName) {
       addressAndProduct += (addressAndProduct ? " - " : "") + productName;
@@ -107,7 +107,7 @@ async function webhook2(req, res) {
     }
 
     // =========================
-    // 6) Payload (IMPORTANT)
+    // 6) Payload
     // =========================
     const payload = {
       phone_number: raw,
@@ -125,7 +125,8 @@ async function webhook2(req, res) {
 
     const endpoint = `${API_BASE_URL}/${VENDOR_UID}/contact/send-template-message`;
 
-    console.log("🚀 Sending to SaaS (webhook2):", payload);
+    // 🔥 السطر اللي انت طالبه
+    console.log("🚀 Sending to SaaS:", endpoint, payload);
 
     const saasRes = await fetch(endpoint, {
       method: "POST",
@@ -138,6 +139,8 @@ async function webhook2(req, res) {
 
     const responseData = await saasRes.json().catch(() => null);
 
+    console.log("✅ SaaS Response (webhook2):", responseData);
+
     if (!saasRes.ok || responseData?.result === "failed") {
       console.error("❌ SaaS Failed (webhook2):", responseData);
       return res.status(500).json({
@@ -146,7 +149,6 @@ async function webhook2(req, res) {
       });
     }
 
-    console.log("✅ SaaS Success (webhook2):", responseData);
     return res.status(200).json({ status: "sent" });
 
   } catch (err) {
