@@ -1,32 +1,18 @@
 // api/webhook2.js
 
 async function webhook(req, res) {
-  // ✅ Health Check
-  if (req.method === "GET") {
-    return res.status(200).send("Webhook2 Running ✅");
-  }
-
-  // ✅ Allow only POST
-  if (req.method !== "POST") {
-    return res.status(405).json({ error: "Method not allowed" });
-  }
+  if (req.method === "GET") return res.status(200).send("Webhook2 Running ✅");
+  if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed" });
 
   try {
     const data = req.body || {};
 
-    // 🏪 Store Tag from URL ?storeTag=EQ
     const storeTagRaw = (req.query && req.query.storeTag) || "";
     const storeTag = storeTagRaw ? `[${storeTagRaw}]` : "";
     console.log("🏪 Store Tag:", storeTagRaw || "NO_TAG");
 
-    // -------------------------
-    // 1) Customer & Order Data
-    // -------------------------
-    const customerName =
-      data.full_name || data.name || data.customer_name || "Customer";
-
-    const customerPhone =
-      data.phone || data.phone_alt || data.customer_phone || "";
+    const customerName = data.full_name || data.name || data.customer_name || "Customer";
+    const customerPhone = data.phone || data.phone_alt || data.customer_phone || "";
 
     const orderId = data.short_id || data.order_id || data.id || "";
     const address = data.address || data.government || "";
@@ -44,26 +30,16 @@ async function webhook(req, res) {
         ? data.cost
         : "";
 
-    // {{3}} → Address - Product - Qty - Price
     let addressAndProduct = address || "";
-    if (productName) {
-      addressAndProduct += (addressAndProduct ? " - " : "") + productName;
-    }
-    if (quantity != null) {
-      addressAndProduct += ` - Qty: ${quantity}`;
-    }
-    if (price !== "") {
-      addressAndProduct += ` - Price: ${price}`;
-    }
+    if (productName) addressAndProduct += (addressAndProduct ? " - " : "") + productName;
+    if (quantity != null) addressAndProduct += ` - Qty: ${quantity}`;
+    if (price !== "") addressAndProduct += ` - Price: ${price}`;
 
     const cleanParam = (text) =>
       text ? text.toString().replace(/[\r\n\t]+/g, " ").trim() : "";
 
-    // -------------------------
-    // 2) Normalize Phone
-    // -------------------------
+    // Normalize phone
     let raw = customerPhone.toString().replace(/[^0-9]/g, "");
-
     if (raw.startsWith("05") && raw.length === 10) raw = "966" + raw.substring(1);
     else if (raw.startsWith("01") && raw.length === 11) raw = "20" + raw.substring(1);
     else if (raw.startsWith("09") && raw.length === 10) raw = "249" + raw.substring(1);
@@ -72,9 +48,7 @@ async function webhook(req, res) {
     const normalizedPhone = raw;
     console.log("📞 Normalized Phone:", normalizedPhone);
 
-    // -------------------------
-    // 3) ENV (Paramedics) — _2 only
-    // -------------------------
+    // ENV _2
     const API_BASE_URL = process.env.SAAS_API_BASE_URL_2;
     const VENDOR_UID = process.env.SAAS_VENDOR_UID2;
     const API_TOKEN = process.env.SAAS_API_TOKEN_2;
@@ -89,16 +63,16 @@ async function webhook(req, res) {
       return res.status(500).json({ error: "missing_env_2" });
     }
 
-    // -------------------------
-    // 4) Template Payload (FINAL)
-    // -------------------------
+    // ✅ Payload: use body_params (NOT field_1/2/3)
     const payload = {
       phone_number: normalizedPhone,
       template_name: "1st_utillty",
-      template_language: "en", // ✅ IMPORTANT
-      field_1: cleanParam(customerName),
-      field_2: cleanParam(`${orderId} ${storeTag}`.trim()),
-      field_3: cleanParam(addressAndProduct),
+      template_language: "en",
+      body_params: [
+        cleanParam(customerName),
+        cleanParam(`${orderId} ${storeTag}`.trim()),
+        cleanParam(addressAndProduct),
+      ],
       contact: {
         first_name: cleanParam(customerName),
         phone_number: normalizedPhone,
@@ -106,8 +80,7 @@ async function webhook(req, res) {
       },
     };
 
-    const endpoint =
-      `${API_BASE_URL}/${VENDOR_UID}/contact/send-template-message`;
+    const endpoint = `${API_BASE_URL}/${VENDOR_UID}/contact/send-template-message`;
 
     console.log("🚀 Sending to SaaS (webhook2):", endpoint, payload);
 
@@ -124,10 +97,7 @@ async function webhook(req, res) {
 
     if (!saasRes.ok || responseData?.result === "failed") {
       console.error("❌ SaaS API Error:", responseData);
-      return res.status(500).json({
-        error: "saas_api_error",
-        details: responseData,
-      });
+      return res.status(500).json({ error: "saas_api_error", details: responseData });
     }
 
     console.log("✅ SaaS Response (webhook2):", responseData);
