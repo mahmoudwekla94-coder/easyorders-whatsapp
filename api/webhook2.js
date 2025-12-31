@@ -48,7 +48,7 @@ async function webhook(req, res) {
     const normalizedPhone = raw;
     console.log("📞 Normalized Phone:", normalizedPhone);
 
-    // ENV _2
+    // ENV (_2 only)
     const API_BASE_URL = process.env.SAAS_API_BASE_URL_2;
     const VENDOR_UID = process.env.SAAS_VENDOR_UID2;
     const API_TOKEN = process.env.SAAS_API_TOKEN_2;
@@ -63,18 +63,31 @@ async function webhook(req, res) {
       return res.status(500).json({ error: "missing_env_2" });
     }
 
-    // ✅ Payload: use body_params (NOT field_1/2/3)
+    // ✅ IMPORTANT: use components->body->parameters (Meta format)
+    const p1 = cleanParam(customerName);
+    const p2 = cleanParam(`${orderId} ${storeTag}`.trim());
+    const p3 = cleanParam(addressAndProduct);
+
     const payload = {
       phone_number: normalizedPhone,
       template_name: "1st_utillty",
       template_language: "en",
-      body_params: [
-        cleanParam(customerName),
-        cleanParam(`${orderId} ${storeTag}`.trim()),
-        cleanParam(addressAndProduct),
+
+      // ✅ ده اللي بيخلي Meta تشوف 3 params بدل 0
+      components: [
+        {
+          type: "body",
+          parameters: [
+            { type: "text", text: p1 },
+            { type: "text", text: p2 },
+            { type: "text", text: p3 },
+          ],
+        },
       ],
+
+      // (اختياري) سيب contact زي ما هو
       contact: {
-        first_name: cleanParam(customerName),
+        first_name: p1,
         phone_number: normalizedPhone,
         country: "auto",
       },
