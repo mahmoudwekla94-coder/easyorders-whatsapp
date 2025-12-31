@@ -6,7 +6,7 @@ async function webhook(req, res) {
     return res.status(200).send("Webhook2 Running ✅");
   }
 
-  // ✅ Allow only POST
+  // ✅ Allow only POST (EasyOrders)
   if (req.method !== "POST") {
     return res.status(405).json({ error: "Method not allowed" });
   }
@@ -14,13 +14,13 @@ async function webhook(req, res) {
   try {
     const data = req.body || {};
 
-    // 🏪 Store Tag from URL ?storeTag=EQ
+    // 🆕 0) قراءة التاج من الويبهوك URL ?storeTag=EQ / GZ / BR
     const storeTagRaw = (req.query && req.query.storeTag) || "";
     const storeTag = storeTagRaw ? `[${storeTagRaw}]` : "";
     console.log("🏪 Store Tag:", storeTagRaw || "NO_TAG");
 
     // -------------------------
-    // 1) Customer & Order Data
+    // 1) بيانات العميل والطلب
     // -------------------------
     const customerName =
       data.full_name || data.name || data.customer_name || "Customer";
@@ -31,10 +31,12 @@ async function webhook(req, res) {
     const orderId = data.short_id || data.order_id || data.id || "";
     const address = data.address || data.government || "";
 
+    // 🔹 أول عنصر في السلة
     const firstItem = data.cart_items?.[0] || {};
     const productName = firstItem.product?.name || "Product";
     const quantity = firstItem.quantity != null ? firstItem.quantity : 1;
 
+    // السعر: نحاول نجيبه من الآتي بالترتيب
     const price =
       firstItem.price != null
         ? firstItem.price
@@ -44,7 +46,7 @@ async function webhook(req, res) {
         ? data.cost
         : "";
 
-    // {{3}} Address - Product - Qty - Price
+    // {{3}}: Address - Product - Qty - Price
     let addressAndProduct = address || "";
     if (productName) {
       addressAndProduct += (addressAndProduct ? " - " : "") + productName;
@@ -56,36 +58,57 @@ async function webhook(req, res) {
       addressAndProduct += ` - Price: ${price}`;
     }
 
-    const cleanParam = (text) =>
-      text ? text.toString().replace(/[\r\n\t]+/g, " ").trim() : "";
+    // تنظيف الباراميترات (مفيش سطور جديدة أو Tabs)
+    const cleanParam = (text) => {
+      if (!text) return "";
+      return text.toString().replace(/[\r\n\t]+/g, " ").trim();
+    };
 
     // -------------------------
-    // 2) Normalize Phone
+    // 2) توحيد صيغة رقم الموبايل
     // -------------------------
     let raw = customerPhone.toString().replace(/[^0-9]/g, "");
 
-    if (raw.startsWith("05") && raw.length === 10) raw = "966" + raw.substring(1);
-    else if (raw.startsWith("01") && raw.length === 11) raw = "20" + raw.substring(1);
-    else if (raw.startsWith("09") && raw.length === 10) raw = "249" + raw.substring(1);
-    else if (raw.startsWith("7") && raw.length === 9) raw = "967" + raw;
+    // السعودية
+    if (raw.startsWith("05") && raw.length === 10) {
+      raw = "966" + raw.substring(1);
+    }
+    // مصر
+    else if (raw.startsWith("01") && raw.length === 11) {
+      raw = "20" + raw.substring(1);
+    }
+    // السودان
+    else if (raw.startsWith("09") && raw.length === 10) {
+      raw = "249" + raw.substring(1);
+    }
+    // اليمن
+    else if (raw.startsWith("7") && raw.length === 9) {
+      raw = "967" + raw;
+    }
 
     const normalizedPhone = raw;
     console.log("📞 Normalized Phone:", normalizedPhone);
 
     // -------------------------
-    // 3) ENV (Paramedics)
+    // ✅ 3) متغيرات SaaS (Paramedics) - نسخة _2 فقط (بدون تعارض)
     // -------------------------
-    const API_BASE_URL = process.env.SAAS_API_BASE_URL; // https://paramedics.cloud/api
-    const VENDOR_UID = process.env.SAAS_VENDOR_UID;     // 77900e17-10c8-4e19-9ced-5bca83e517dd
-    const API_TOKEN = process.env.SAAS_API_TOKEN;       // vXsHafSde9k5lfJ25ElID1gUANY4Z2ianjYdlzVagDbmNHP1ZiIbmPBZOBE9X0MR
+    const API_BASE_URL = process.env.SAAS_API_BASE_URL_2; // https://paramedics.cloud/api
+    const VENDOR_UID = process.env.SAAS_VENDOR_UID2;      // 77900e17-...
+    const API_TOKEN = process.env.SAAS_API_TOKEN_2;       // vXsHaf...
+
+    console.log("🔹 ENV CHECK (_2):", {
+      API_BASE_URL: API_BASE_URL ? "✅ Set" : "❌ Missing",
+      VENDOR_UID: VENDOR_UID ? "✅ Set" : "❌ Missing",
+      API_TOKEN: API_TOKEN ? "✅ Set" : "❌ Missing",
+    });
 
     if (!API_BASE_URL || !VENDOR_UID || !API_TOKEN) {
-      console.error("❌ Missing Environment Variables");
-      return res.status(500).json({ error: "missing_env" });
+      console.error("❌ Missing Environment Variables (_2)");
+      return res.status(500).json({ error: "missing_env_2" });
     }
 
     // -------------------------
-    // 4) Template Payload
+    // ✅ 4) Payload الخاص بالتمبلت
     // -------------------------
     const payload = {
       phone_number: normalizedPhone,
@@ -101,16 +124,15 @@ async function webhook(req, res) {
       },
     };
 
-    // ✅ IMPORTANT: token in URL
-    const endpoint =
-      `${API_BASE_URL}/${VENDOR_UID}/contact/send-template-message?token=${API_TOKEN}`;
+    const endpoint = `${API_BASE_URL}/${VENDOR_UID}/contact/send-template-message`;
 
-    console.log("🚀 Sending to SaaS:", endpoint, payload);
+    console.log("🚀 Sending to SaaS (webhook2):", endpoint, payload);
 
     const saasRes = await fetch(endpoint, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
+        Authorization: `Bearer ${API_TOKEN}`, // ✅ API Access Token (_2)
       },
       body: JSON.stringify(payload),
     });
@@ -118,11 +140,10 @@ async function webhook(req, res) {
     const responseData = await saasRes.json().catch(() => null);
 
     if (!saasRes.ok) {
-      console.error("❌ SaaS API Error:", responseData);
-      return res.status(500).json({
-        error: "saas_api_error",
-        details: responseData,
-      });
+      console.error("❌ SaaS API Error (webhook2):", responseData);
+      return res
+        .status(500)
+        .json({ error: "saas_api_error", details: responseData });
     }
 
     console.log("✅ SaaS Response (webhook2):", responseData);
