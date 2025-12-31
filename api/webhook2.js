@@ -53,4 +53,89 @@ async function webhook(req, res) {
       addressAndProduct += ` - Qty: ${quantity}`;
     }
     if (price !== "") {
-      addressAndProduct +
+      addressAndProduct += ` - Price: ${price}`;
+    }
+
+    const cleanParam = (text) =>
+      text ? text.toString().replace(/[\r\n\t]+/g, " ").trim() : "";
+
+    // -------------------------
+    // 2) Normalize Phone
+    // -------------------------
+    let raw = customerPhone.toString().replace(/[^0-9]/g, "");
+
+    if (raw.startsWith("05") && raw.length === 10) raw = "966" + raw.substring(1);
+    else if (raw.startsWith("01") && raw.length === 11) raw = "20" + raw.substring(1);
+    else if (raw.startsWith("09") && raw.length === 10) raw = "249" + raw.substring(1);
+    else if (raw.startsWith("7") && raw.length === 9) raw = "967" + raw;
+
+    const normalizedPhone = raw;
+    console.log("📞 Normalized Phone:", normalizedPhone);
+
+    // -------------------------
+    // 3) ENV (Paramedics) — _2 only
+    // -------------------------
+    const API_BASE_URL = process.env.SAAS_API_BASE_URL_2;
+    const VENDOR_UID = process.env.SAAS_VENDOR_UID2;
+    const API_TOKEN = process.env.SAAS_API_TOKEN_2;
+
+    console.log("🔹 ENV CHECK (_2):", {
+      API_BASE_URL: API_BASE_URL ? "✅ Set" : "❌ Missing",
+      VENDOR_UID: VENDOR_UID ? "✅ Set" : "❌ Missing",
+      API_TOKEN: API_TOKEN ? "✅ Set" : "❌ Missing",
+    });
+
+    if (!API_BASE_URL || !VENDOR_UID || !API_TOKEN) {
+      return res.status(500).json({ error: "missing_env_2" });
+    }
+
+    // -------------------------
+    // 4) Template Payload (FINAL)
+    // -------------------------
+    const payload = {
+      phone_number: normalizedPhone,
+      template_name: "1st_utillty",
+      template_language: "en", // ✅ IMPORTANT
+      field_1: cleanParam(customerName),
+      field_2: cleanParam(`${orderId} ${storeTag}`.trim()),
+      field_3: cleanParam(addressAndProduct),
+      contact: {
+        first_name: cleanParam(customerName),
+        phone_number: normalizedPhone,
+        country: "auto",
+      },
+    };
+
+    const endpoint =
+      `${API_BASE_URL}/${VENDOR_UID}/contact/send-template-message`;
+
+    console.log("🚀 Sending to SaaS (webhook2):", endpoint, payload);
+
+    const saasRes = await fetch(endpoint, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${API_TOKEN}`,
+      },
+      body: JSON.stringify(payload),
+    });
+
+    const responseData = await saasRes.json().catch(() => null);
+
+    if (!saasRes.ok || responseData?.result === "failed") {
+      console.error("❌ SaaS API Error:", responseData);
+      return res.status(500).json({
+        error: "saas_api_error",
+        details: responseData,
+      });
+    }
+
+    console.log("✅ SaaS Response (webhook2):", responseData);
+    return res.status(200).json({ status: "sent", data: responseData });
+  } catch (err) {
+    console.error("❌ Webhook2 Error:", err);
+    return res.status(500).json({ error: "internal_error" });
+  }
+}
+
+module.exports = webhook;
