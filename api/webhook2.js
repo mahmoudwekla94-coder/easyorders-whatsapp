@@ -2,23 +2,33 @@
 
 module.exports = async function handler(req, res) {
   // ✅ Health Check
-  if (req.method === "GET") {
-    return res.status(200).send("Webhook Running ✅");
-  }
-
-  // ✅ Allow only POST
-  if (req.method !== "POST") {
-    return res.status(405).json({ error: "Method not allowed" });
-  }
+  if (req.method === "GET") return res.status(200).send("Webhook Running ✅");
+  if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed" });
 
   try {
-    const data = req.body || {};
-    console.log("🔹 [1] Received Webhook Payload:", JSON.stringify(data));
+    // ✅ Read raw body (works even if EO sends non-json)
+    const buffers = [];
+    for await (const chunk of req) buffers.push(chunk);
+    const rawBody = Buffer.concat(buffers).toString("utf8");
+
+    console.log("✅ HIT POST /api/webhook2");
+    console.log("✅ Content-Type:", req.headers["content-type"]);
+    console.log("✅ Raw Body:", rawBody);
+
+    let data = {};
+    try {
+      data = rawBody ? JSON.parse(rawBody) : (req.body || {});
+    } catch {
+      // sometimes EO sends key=value&...
+      data = { raw: rawBody, ...(req.body || {}) };
+    }
+
+    console.log("🔹 [1] Parsed Payload:", JSON.stringify(data));
 
     // ✅ ENV (_2)
     const API_BASE_URL = process.env.SAAS_API_BASE_URL_2;
-    const VENDOR_UID   = process.env.SAAS_VENDOR_UID2;
-    const API_TOKEN    = process.env.SAAS_API_TOKEN_2;
+    const VENDOR_UID = process.env.SAAS_VENDOR_UID2;
+    const API_TOKEN = process.env.SAAS_API_TOKEN_2;
 
     console.log("🔹 [2] ENV CHECK (_2):", {
       API_BASE_URL: API_BASE_URL ? "✅ Set" : "❌ Missing",
@@ -30,18 +40,11 @@ module.exports = async function handler(req, res) {
       return res.status(500).json({ error: "Missing ENV _2" });
     }
 
-    // -------------------------
-    // Helpers
-    // -------------------------
     const cleanParam = (text) =>
       text ? text.toString().replace(/[\r\n\t]+/g, " ").trim() : "";
 
-    // -------------------------
-    // Customer & Order Data
-    // -------------------------
     const customerName =
       data.full_name || data.name || data.customer_name || "Customer";
-
     const customerPhone =
       data.phone || data.phone_alt || data.customer_phone || "";
 
@@ -61,16 +64,13 @@ module.exports = async function handler(req, res) {
         ? data.cost
         : "";
 
-    // {{3}} body text (EN)
     let addressAndProduct = address || "";
     if (productName) addressAndProduct += (addressAndProduct ? " - " : "") + productName;
     if (quantity != null) addressAndProduct += ` - Qty: ${quantity}`;
     if (price !== "") addressAndProduct += ` - Price: ${price}`;
 
-    // -------------------------
     // Normalize phone
-    // -------------------------
-    let raw = customerPhone.toString().replace(/[^0-9]/g, "");
+    let raw = (customerPhone || "").toString().replace(/[^0-9]/g, "");
     if (raw.startsWith("05") && raw.length === 10) raw = "966" + raw.substring(1);
     else if (raw.startsWith("01") && raw.length === 11) raw = "20" + raw.substring(1);
     else if (raw.startsWith("09") && raw.length === 10) raw = "249" + raw.substring(1);
@@ -79,18 +79,8 @@ module.exports = async function handler(req, res) {
     const normalizedPhone = raw;
     console.log("🔹 [3] Normalized Phone:", normalizedPhone);
 
-    // -------------------------
-    // Endpoint
-    // -------------------------
-    const endpoint =
-      `${API_BASE_URL}/${VENDOR_UID}/contact/send-template-message`;
+    const endpoint = `${API_BASE_URL}/${VENDOR_UID}/contact/send-template-message`;
 
-    // -------------------------
-    // Template params (IMPORTANT)
-    // Template: 1st_utillty
-    // Language: en
-    // Needs 3 body params
-    // -------------------------
     const p1 = cleanParam(customerName);
     const p2 = cleanParam(String(orderId));
     const p3 = cleanParam(addressAndProduct);
@@ -99,29 +89,13 @@ module.exports = async function handler(req, res) {
       phone_number: normalizedPhone,
       template_name: "1st_utillty",
       template_language: "en",
-
-      // ✅ Meta official format
       components: [
-        {
-          type: "body",
-          parameters: [
-            { type: "text", text: p1 },
-            { type: "text", text: p2 },
-            { type: "text", text: p3 },
-          ],
-        },
+        { type: "body", parameters: [{ type: "text", text: p1 }, { type: "text", text: p2 }, { type: "text", text: p3 }] },
       ],
-
-      // (Fallback – harmless)
       field_1: p1,
       field_2: p2,
       field_3: p3,
-
-      contact: {
-        first_name: p1,
-        phone_number: normalizedPhone,
-        country: "auto",
-      },
+      contact: { first_name: p1, phone_number: normalizedPhone, country: "auto" },
     };
 
     console.log("🔹 [4] Target Endpoint:", endpoint);
@@ -141,15 +115,10 @@ module.exports = async function handler(req, res) {
     console.log("🔹 [7] API Body:", responseText);
 
     if (!saasRes.ok) {
-      return res.status(500).json({
-        error: "SaaS API Error",
-        status: saasRes.status,
-        body: responseText,
-      });
+      return res.status(500).json({ error: "SaaS API Error", status: saasRes.status, body: responseText });
     }
 
     return res.status(200).json({ status: "sent", api_response: responseText });
-
   } catch (err) {
     console.error("❌ [ERROR]:", err);
     return res.status(500).json({ error: err?.message || "internal_error" });
