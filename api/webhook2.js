@@ -76,8 +76,8 @@ async function webhook(req, res) {
     // 3) ENV (Paramedics)
     // -------------------------
     const API_BASE_URL = process.env.SAAS_API_BASE_URL; // https://paramedics.cloud/api
-    const VENDOR_UID = process.env.SAAS_VENDOR_UID;     // 2c6464de-695d-4af5-8373-63fa8cdb5d4c.
-    const API_TOKEN = process.env.SAAS_API_TOKEN;       // zZMiDx6PcdwQJeFY3SMb6rUUGABkkwIrwThskNItIQPjSKy160CsJXOIIJkxVSo6
+    const VENDOR_UID = process.env.SAAS_VENDOR_UID;     // 77900e17-10c8-4e19-9ced-5bca83e517dd
+    const API_TOKEN = process.env.SAAS_API_TOKEN;       // vXsHafSde9k5lfJ25ElID1gUANY4Z2ianjYdlzVagDbmNHP1ZiIbmPBZOBE9X0MR
 
     if (!API_BASE_URL || !VENDOR_UID || !API_TOKEN) {
       console.error("❌ Missing Environment Variables");
