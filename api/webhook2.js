@@ -30,13 +30,14 @@ async function webhook(req, res) {
         ? data.cost
         : "";
 
+    const cleanParam = (text) =>
+      text ? text.toString().replace(/[\r\n\t]+/g, " ").trim() : "";
+
+    // {{3}} → Address - Product - Qty - Price
     let addressAndProduct = address || "";
     if (productName) addressAndProduct += (addressAndProduct ? " - " : "") + productName;
     if (quantity != null) addressAndProduct += ` - Qty: ${quantity}`;
     if (price !== "") addressAndProduct += ` - Price: ${price}`;
-
-    const cleanParam = (text) =>
-      text ? text.toString().replace(/[\r\n\t]+/g, " ").trim() : "";
 
     // Normalize phone
     let raw = customerPhone.toString().replace(/[^0-9]/g, "");
@@ -63,17 +64,33 @@ async function webhook(req, res) {
       return res.status(500).json({ error: "missing_env_2" });
     }
 
-    // ✅ IMPORTANT: use components->body->parameters (Meta format)
+    // ✅ params
     const p1 = cleanParam(customerName);
     const p2 = cleanParam(`${orderId} ${storeTag}`.trim());
     const p3 = cleanParam(addressAndProduct);
 
+    // ✅ Mega payload: include ALL possible param formats
     const payload = {
       phone_number: normalizedPhone,
       template_name: "1st_utillty",
       template_language: "en",
 
-      // ✅ ده اللي بيخلي Meta تشوف 3 params بدل 0
+      // (A) old style fields
+      field_1: p1,
+      field_2: p2,
+      field_3: p3,
+
+      // (B) array style
+      body_params: [p1, p2, p3],
+      params: [p1, p2, p3],
+      localizable_params: [p1, p2, p3],
+
+      // (C) cloud-api style (text objects)
+      parameters: [
+        { type: "text", text: p1 },
+        { type: "text", text: p2 },
+        { type: "text", text: p3 },
+      ],
       components: [
         {
           type: "body",
@@ -85,7 +102,6 @@ async function webhook(req, res) {
         },
       ],
 
-      // (اختياري) سيب contact زي ما هو
       contact: {
         first_name: p1,
         phone_number: normalizedPhone,
