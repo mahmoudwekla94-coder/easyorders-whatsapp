@@ -1,4 +1,3 @@
-
 // api/webhook.js
 
 module.exports = async function webhook(req, res) {
@@ -44,7 +43,8 @@ module.exports = async function webhook(req, res) {
     const storeTag = String(storeTagRaw).toUpperCase();
 
     // =========================
-    // Store Config (template + lang = ar)
+    // Store Config
+    // (template=ordar_confirmation, lang=ar)
     // =========================
     const storeConfig = {
       EQ: { template: "ordar_confirmation", lang: "ar", currency: "ريال سعودي", defaultCountry: "KSA" },
@@ -82,11 +82,16 @@ module.exports = async function webhook(req, res) {
         if (raw.startsWith(code)) return `+${raw}`;
       }
 
+      // Egypt
       if (raw.startsWith("01") && raw.length === 11) return `+20${raw.substring(1)}`;
+      // Sudan
       if (raw.startsWith("09") && raw.length === 10) return `+249${raw.substring(1)}`;
+      // Yemen
       if (raw.startsWith("07") && raw.length === 9)  return `+967${raw.substring(1)}`;
+      // Jordan
       if (raw.startsWith("07") && raw.length === 10) return `+962${raw.substring(1)}`;
 
+      // KSA/UAE mobiles (best-effort)
       if (raw.startsWith("05") && raw.length === 10) {
         if (country === "UAE") return `+971${raw.substring(1)}`;
         return `+966${raw.substring(1)}`;
@@ -131,6 +136,7 @@ module.exports = async function webhook(req, res) {
         cfg.defaultCountry;
 
       quantity = firstItem.quantity ?? 1;
+
       productName =
         items.length > 1
           ? `${firstItem.title} + ${items.length - 1} منتجات أخرى`
@@ -231,4 +237,81 @@ module.exports = async function webhook(req, res) {
 
     const nationalAddress =
       safeText(nationalAddressRaw) ||
-      "غير متوفر (يرجى تزويدن
+      "غير متوفر (يرجى تزويدنا بالعنوان الوطني)";
+
+    // =========================
+    // ENV
+    // =========================
+    const API_BASE_URL = process.env.SAAS_API_BASE_URL;
+    const VENDOR_UID = process.env.SAAS_VENDOR_UID;
+    const API_TOKEN = process.env.SAAS_API_TOKEN;
+
+    if (!API_BASE_URL || !VENDOR_UID || !API_TOKEN) {
+      return res.status(500).json({
+        error: "missing_env",
+        missing: {
+          SAAS_API_BASE_URL: !API_BASE_URL,
+          SAAS_VENDOR_UID: !VENDOR_UID,
+          SAAS_API_TOKEN: !API_TOKEN,
+        },
+      });
+    }
+
+    // =========================
+    // WhatsApp Payload
+    // =========================
+    const payload = {
+      phone_number: digitsPhone,
+      template_name: "ordar_confirmation",
+      template_language: "ar",
+
+      field_1: safeText(customerName),
+      field_2: safeText(storeTag === "SH" ? "SH" : `${orderId} (${storeTag})`),
+      field_3: safeText(productName),
+      field_4: safeText(quantity),
+      field_5: safeText(priceText),
+      field_6: safeText(shippingText),
+      field_7: safeText(totalText),
+      field_8: safeText(detailedAddress),
+      field_9: safeText(nationalAddress),
+
+      contact: {
+        first_name: safeText(customerName),
+        phone_number: digitsPhone,
+        country: "auto",
+      },
+    };
+
+    const endpoint = `${API_BASE_URL}/${VENDOR_UID}/contact/send-template-message`;
+
+    console.log("🏪 Store:", storeTag, "| isShopifyOrder:", isShopifyOrder);
+    console.log("🧩 Template:", payload.template_name, "| Lang:", payload.template_language);
+    console.log("🚀 Payload:", payload);
+
+    const saasRes = await fetch(endpoint, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${API_TOKEN}`,
+      },
+      body: JSON.stringify(payload),
+    });
+
+    const responseData = await saasRes.json().catch(() => null);
+
+    if (!saasRes.ok || responseData?.result === "failed") {
+      console.error("❌ SaaS Error:", responseData);
+      return res.status(500).json({ error: "saas_error", responseData });
+    }
+
+    console.log("✅ Success:", responseData);
+    return res.status(200).json({ status: "sent", storeTag, data: responseData });
+
+  } catch (err) {
+    console.error("❌ Webhook Crash:", err);
+    return res.status(500).json({
+      error: "internal_error",
+      details: err?.message || String(err),
+    });
+  }
+};
