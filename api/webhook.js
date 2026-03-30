@@ -43,13 +43,13 @@ module.exports = async function webhook(req, res) {
     const storeTag = String(storeTagRaw).toUpperCase();
 
     // =========================
-    // Store Config
+    // Store Config (UPDATED)
     // =========================
     const storeConfig = {
-      EQ: { template: "ordar_confirmation", lang: "ar", currency: "ريال سعودي", defaultCountry: "KSA" },
-      BZ: { template: "ordar_confirmation", lang: "ar", currency: "ريال سعودي", defaultCountry: "KSA" },
-      GZ: { template: "ordar_confirmation", lang: "ar", currency: "ريال سعودي", defaultCountry: "KSA" },
-      SH: { template: "ordar_confirmation", lang: "ar", currency: "ريال سعودي", defaultCountry: "KSA" },
+      EQ: { template: "t_utillty", lang: "ar", currency: "ريال سعودي", defaultCountry: "KSA" },
+      BZ: { template: "t_utillty", lang: "ar", currency: "ريال سعودي", defaultCountry: "KSA" },
+      GZ: { template: "t_utillty", lang: "ar", currency: "ريال سعودي", defaultCountry: "KSA" },
+      SH: { template: "t_utillty", lang: "ar", currency: "ريال سعودي", defaultCountry: "KSA" },
     };
 
     const cfg = storeConfig[storeTag] || storeConfig.EQ;
