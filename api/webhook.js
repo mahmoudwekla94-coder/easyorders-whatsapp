@@ -94,26 +94,46 @@ module.exports = async function webhook(req, res) {
       orderId = data.name || data.order_number || data.id || "";
       country = shipping.country_code || shipping.country || cfg.defaultCountry;
       quantity = firstItem.quantity ?? 1;
+
       productName = items.length > 1
         ? `${firstItem.title} + ${items.length - 1} منتجات أخرى`
         : firstItem.title || "منتج";
+
       priceRaw = firstItem.price ?? data.total_price ?? 0;
+
       const shippingLine = data.shipping_lines?.[0] || {};
       shippingRaw = shippingLine.price ?? data.total_shipping_price_set?.shop_money?.amount ?? 0;
+
       detailedAddress = [shipping.address1, shipping.address2, shipping.city, shipping.province, shipping.zip]
-        .filter(Boolean).join(" - ");
+        .filter(Boolean)
+        .join(" - ") || "غير متوفر";
 
     } else {
       customerName = data.full_name || data.name || data.customer_name || "عميلنا العزيز";
       customerPhone = data.phone || data.phone_alt || data.customer_phone || "";
       orderId = data.short_id || data.order_id || data.id || "";
       country = data.country || data.shipping_country || cfg.defaultCountry;
+
       const firstItem = data.cart_items?.[0] || {};
       quantity = firstItem.quantity ?? 1;
       productName = firstItem.product?.name || "منتج";
+
       priceRaw = firstItem.price ?? data.total_cost ?? data.cost ?? 0;
-      shippingRaw = data.shipping_cost ?? data.shipping_fee ?? data.shipping_price ?? data.delivery_cost ?? data.shipping ?? 0;
-      detailedAddress = data.address || data.full_address || data.shipping_address || data.city || "غير متوفر";
+      shippingRaw =
+        data.shipping_cost ??
+        data.shipping_fee ??
+        data.shipping_price ??
+        data.delivery_cost ??
+        data.shipping ??
+        0;
+
+      detailedAddress =
+        data.address ||
+        data.full_address ||
+        data.shipping_address ||
+        data.city ||
+        "غير متوفر";
+
       nationalAddressRaw = data.national_address || data.short_address || "";
     }
 
@@ -121,23 +141,34 @@ module.exports = async function webhook(req, res) {
     const digitsPhone = e164Phone.replace(/^\+/, "");
 
     if (!digitsPhone || digitsPhone.length < 9) {
+      console.log("INVALID PHONE:", { customerPhone, e164Phone, digitsPhone });
       return res.status(400).json({ error: "invalid_phone", customerPhone });
     }
 
     const priceNum = toNumber(priceRaw);
     const shippingNum = toNumber(shippingRaw);
     const totalNum = priceNum + shippingNum;
+
     const currency = cfg.currency;
     const priceText = priceNum ? `${priceNum} ${currency}` : "غير محدد";
     const shippingText = shippingNum ? `${shippingNum} ${currency}` : "مجاني";
     const totalText = `${totalNum} ${currency}`;
-    const nationalAddress = safeText(nationalAddressRaw) || "غير متوفر (يرجى تزويدنا بالعنوان الوطني)";
+
+    const nationalAddress =
+      safeText(nationalAddressRaw) ||
+      "غير متوفر (يرجى تزويدنا بالعنوان الوطني)";
 
     const API_BASE_URL = process.env.SAAS_API_BASE_URL;
     const VENDOR_UID = process.env.SAAS_VENDOR_UID;
     const API_TOKEN = process.env.SAAS_API_TOKEN;
 
     if (!API_BASE_URL || !VENDOR_UID || !API_TOKEN) {
+      console.log("MISSING ENV:", {
+        API_BASE_URL: !!API_BASE_URL,
+        VENDOR_UID: !!VENDOR_UID,
+        API_TOKEN: !!API_TOKEN,
+      });
+
       return res.status(500).json({ error: "missing_env" });
     }
 
@@ -145,6 +176,7 @@ module.exports = async function webhook(req, res) {
       phone_number: digitsPhone,
       template_name: cfg.template,
       template_language: cfg.lang,
+
       field_1: safeText(customerName),
       field_2: safeText(storeTag === "SH" ? "SH" : `${orderId} (${storeTag})`),
       field_3: safeText(productName),
@@ -154,6 +186,7 @@ module.exports = async function webhook(req, res) {
       field_7: safeText(totalText),
       field_8: safeText(detailedAddress),
       field_9: safeText(nationalAddress),
+
       contact: {
         first_name: safeText(customerName),
         phone_number: digitsPhone,
@@ -161,7 +194,11 @@ module.exports = async function webhook(req, res) {
       },
     };
 
+    console.log("PAYLOAD:", JSON.stringify(payload, null, 2));
+
     const endpoint = `${API_BASE_URL}/${VENDOR_UID}/contact/send-template-message`;
+
+    console.log("ENDPOINT:", endpoint);
 
     const saasRes = await fetch(endpoint, {
       method: "POST",
@@ -172,15 +209,39 @@ module.exports = async function webhook(req, res) {
       body: JSON.stringify(payload),
     });
 
-    const responseData = await saasRes.json().catch(() => null);
+    const responseText = await saasRes.text();
 
-    if (!saasRes.ok || responseData?.result === "failed") {
-      return res.status(500).json({ error: "saas_error", responseData });
+    let responseData = null;
+    try {
+      responseData = JSON.parse(responseText);
+    } catch (e) {
+      responseData = responseText;
     }
 
-    return res.status(200).json({ status: "sent", storeTag, data: responseData });
+    console.log("SAAS STATUS:", saasRes.status);
+    console.log("SAAS OK:", saasRes.ok);
+    console.log("SAAS RESPONSE:", JSON.stringify(responseData, null, 2));
+
+    if (!saasRes.ok || responseData?.result === "failed") {
+      return res.status(500).json({
+        error: "saas_error",
+        status: saasRes.status,
+        responseData,
+      });
+    }
+
+    return res.status(200).json({
+      status: "sent",
+      storeTag,
+      phone: digitsPhone,
+      template: cfg.template,
+      language: cfg.lang,
+      data: responseData,
+    });
 
   } catch (err) {
+    console.log("INTERNAL ERROR:", err);
+
     return res.status(500).json({
       error: "internal_error",
       details: err?.message || String(err),
