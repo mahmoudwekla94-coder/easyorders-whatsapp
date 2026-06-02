@@ -1,23 +1,41 @@
-// api/webhook.js
+const logError = (label, details = {}) => {
+  try {
+    console.error(JSON.stringify({
+      label,
+      time: new Date().toISOString(),
+      ...details,
+    }, null, 2));
+  } catch (err) {
+    console.error(label, details, err);
+  }
+};
+
+const readBody = (body) => {
+  if (!body) return {};
+  if (typeof body === "string") {
+    try {
+      return JSON.parse(body);
+    } catch (err) {
+      logError("body_parse_error", { message: err?.message || String(err), body });
+      return { raw_body: body };
+    }
+  }
+  return body;
+};
 
 module.exports = async function webhook(req, res) {
-  // =========================
-  // Health Check
-  // =========================
   if (req.method === "GET") {
     return res.status(200).send("Webhook Running ✅");
   }
 
   if (req.method !== "POST") {
+    logError("method_not_allowed", { method: req.method });
     return res.status(405).json({ error: "Method not allowed" });
   }
 
   try {
-    const data = req.body || {};
+    const data = readBody(req.body);
 
-    // =========================
-    // Helpers
-    // =========================
     const safeText = (t) => {
       if (!t && t !== 0) return "";
       return String(t)
@@ -30,10 +48,8 @@ module.exports = async function webhook(req, res) {
     const toNumber = (v) =>
       Number(String(v ?? "").replace(/[^0-9.]/g, "")) || 0;
 
-    // =========================
-    // Store Tag (WHATWG URL)
-    // =========================
-    const u = new URL(req.url, `https://${req.headers.host}`);
+    const host = req.headers?.host || "localhost";
+    const u = new URL(req.url || "/", `https://${host}`);
     const storeTagRaw =
       u.searchParams.get("storeTag") ||
       data.storeTag ||
@@ -42,40 +58,35 @@ module.exports = async function webhook(req, res) {
 
     const storeTag = String(storeTagRaw).toUpperCase();
 
-    // =========================
-    // Store Config
-    // =========================
-const storeConfig = {
-  EQ: {
-    template: "confirmation",
-    lang: "en",
-    currency: "ريال سعودي",
-    defaultCountry: "KSA",
-  },
-  BZ: {
-    template: "confirmation",
-    lang: "en",
-    currency: "ريال سعودي",
-    defaultCountry: "KSA",
-  },
-  GZ: {
-    template: "confirmation",
-    lang: "en",
-    currency: "ريال سعودي",
-    defaultCountry: "KSA",
-  },
-  SH: {
-    template: "confirmation",
-    lang: "en",
-    currency: "ريال سعودي",
-    defaultCountry: "KSA",
-  },
-};
+    const storeConfig = {
+      EQ: {
+        template: "confirmation_order",
+        lang: "en",
+        currency: "ريال سعودي",
+        defaultCountry: "KSA",
+      },
+      BZ: {
+        template: "confirmation_order",
+        lang: "en",
+        currency: "ريال سعودي",
+        defaultCountry: "KSA",
+      },
+      GZ: {
+        template: "confirmation_order",
+        lang: "en",
+        currency: "ريال سعودي",
+        defaultCountry: "KSA",
+      },
+      SH: {
+        template: "confirmation_order",
+        lang: "en",
+        currency: "ريال سعودي",
+        defaultCountry: "KSA",
+      },
+    };
+
     const cfg = storeConfig[storeTag] || storeConfig.EQ;
 
-    // =========================
-    // Detect Shopify Order
-    // =========================
     const looksLikeShopify =
       (typeof data.name === "string" && data.name.startsWith("#")) ||
       !!data.shipping_address ||
@@ -84,9 +95,6 @@ const storeConfig = {
 
     const isShopifyOrder = looksLikeShopify && !data.cart_items;
 
-    // =========================
-    // Normalize Phone (E.164)
-    // =========================
     function normalizePhone(phone, country = "KSA") {
       if (!phone) return "";
       let raw = String(phone).replace(/[^0-9]/g, "");
@@ -105,7 +113,6 @@ const storeConfig = {
       if (raw.startsWith("07") && raw.length === 9) return `+967${raw.substring(1)}`;
       if (raw.startsWith("07") && raw.length === 10) return `+962${raw.substring(1)}`;
 
-      // السعودية / الإمارات
       if (raw.startsWith("05") && raw.length === 10) {
         if (country === "UAE") return `+971${raw.substring(1)}`;
         return `+966${raw.substring(1)}`;
@@ -114,9 +121,6 @@ const storeConfig = {
       return raw ? `+${raw}` : "";
     }
 
-    // =========================
-    // Data Mapping
-    // =========================
     let customerName, customerPhone, orderId, country;
     let productName, quantity = 1;
     let priceRaw = 0, shippingRaw = 0;
@@ -231,6 +235,13 @@ const storeConfig = {
     const digitsPhone = e164Phone.replace(/^\+/, "");
 
     if (!digitsPhone || digitsPhone.length < 9) {
+      logError("invalid_phone", {
+        storeTag,
+        customerPhone,
+        country,
+        orderId,
+        bodyKeys: Object.keys(data || {}),
+      });
       return res.status(400).json({ error: "invalid_phone", customerPhone });
     }
 
@@ -247,27 +258,25 @@ const storeConfig = {
       safeText(nationalAddressRaw) ||
       "غير متوفر (يرجى تزويدنا بالعنوان الوطني)";
 
-    // =========================
-    // ENV
-    // =========================
     const API_BASE_URL = process.env.SAAS_API_BASE_URL;
     const VENDOR_UID = process.env.SAAS_VENDOR_UID;
     const API_TOKEN = process.env.SAAS_API_TOKEN;
 
     if (!API_BASE_URL || !VENDOR_UID || !API_TOKEN) {
+      logError("missing_env", {
+        SAAS_API_BASE_URL: Boolean(API_BASE_URL),
+        SAAS_VENDOR_UID: Boolean(VENDOR_UID),
+        SAAS_API_TOKEN: Boolean(API_TOKEN),
+      });
       return res.status(500).json({
         error: "missing_env",
       });
     }
 
-    // =========================
-    // Payload
-    // =========================
     const payload = {
       phone_number: digitsPhone,
-      template_name: cfg.template,       // ✅ confirmation
-      template_language: cfg.lang,       // ✅ en
-
+      template_name: cfg.template,
+      template_language: cfg.lang,
       field_1: safeText(customerName),
       field_2: safeText(storeTag === "SH" ? "SH" : `${orderId} (${storeTag})`),
       field_3: safeText(productName),
@@ -277,7 +286,6 @@ const storeConfig = {
       field_7: safeText(totalText),
       field_8: safeText(detailedAddress),
       field_9: safeText(nationalAddress),
-
       contact: {
         first_name: safeText(customerName),
         phone_number: digitsPhone,
@@ -287,24 +295,81 @@ const storeConfig = {
 
     const endpoint = `${API_BASE_URL}/${VENDOR_UID}/contact/send-template-message`;
 
-    const saasRes = await fetch(endpoint, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${API_TOKEN}`,
-      },
-      body: JSON.stringify(payload),
-    });
+    let saasRes;
 
-    const responseData = await saasRes.json().catch(() => null);
-
-    if (!saasRes.ok || responseData?.result === "failed") {
-      return res.status(500).json({ error: "saas_error", responseData });
+    try {
+      saasRes = await fetch(endpoint, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${API_TOKEN}`,
+        },
+        body: JSON.stringify(payload),
+      });
+    } catch (err) {
+      logError("fetch_error", {
+        message: err?.message || String(err),
+        stack: err?.stack,
+        endpoint,
+        storeTag,
+        payload,
+      });
+      return res.status(500).json({
+        error: "fetch_error",
+        details: err?.message || String(err),
+      });
     }
 
-    return res.status(200).json({ status: "sent", storeTag, data: responseData });
+    const responseText = await saasRes.text().catch((err) => {
+      logError("response_read_error", {
+        message: err?.message || String(err),
+        stack: err?.stack,
+        endpoint,
+        storeTag,
+      });
+      return "";
+    });
+
+    let responseData = null;
+
+    if (responseText) {
+      try {
+        responseData = JSON.parse(responseText);
+      } catch (err) {
+        logError("response_parse_error", {
+          message: err?.message || String(err),
+          stack: err?.stack,
+          status: saasRes.status,
+          statusText: saasRes.statusText,
+          endpoint,
+          storeTag,
+          responseText,
+        });
+      }
+    }
+
+    if (!saasRes.ok || responseData?.result === "failed") {
+      logError("saas_error", {
+        status: saasRes.status,
+        statusText: saasRes.statusText,
+        endpoint,
+        storeTag,
+        template_name: payload.template_name,
+        template_language: payload.template_language,
+        payload,
+        responseData,
+        responseText,
+      });
+      return res.status(500).json({ error: "saas_error", responseData, responseText });
+    }
+
+    return res.status(200).json({ status: "sent", storeTag, data: responseData || responseText });
 
   } catch (err) {
+    logError("internal_error", {
+      message: err?.message || String(err),
+      stack: err?.stack,
+    });
     return res.status(500).json({
       error: "internal_error",
       details: err?.message || String(err),
