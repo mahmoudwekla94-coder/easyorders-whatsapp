@@ -58,33 +58,32 @@ module.exports = async function webhook(req, res) {
 
     const storeTag = String(storeTagRaw).toUpperCase();
 
-    const storeConfig = {
-      EQ: {
-        template: "confirmation_order",
-        lang: "en",
-        currency: "ريال سعودي",
-        defaultCountry: "KSA",
-      },
-      BZ: {
-        template: "confirmation_order",
-        lang: "en",
-        currency: "ريال سعودي",
-        defaultCountry: "KSA",
-      },
-      GZ: {
-        template: "confirmation_order",
-        lang: "en",
-        currency: "ريال سعودي",
-        defaultCountry: "KSA",
-      },
-      SH: {
-        template: "confirmation_order",
-        lang: "en",
-        currency: "ريال سعودي",
-        defaultCountry: "KSA",
-      },
-    };
-
+  const storeConfig = {
+  EQ: {
+    template: "confirmation",
+    lang: "en",
+    currency: "ريال سعودي",
+    defaultCountry: "KSA",
+  },
+  BZ: {
+    template: "confirmation",
+    lang: "en",
+    currency: "ريال سعودي",
+    defaultCountry: "KSA",
+  },
+  GZ: {
+    template: "confirmation",
+    lang: "en",
+    currency: "ريال سعودي",
+    defaultCountry: "KSA",
+  },
+  SH: {
+    template: "confirmation",
+    lang: "en",
+    currency: "ريال سعودي",
+    defaultCountry: "KSA",
+  },
+};
     const cfg = storeConfig[storeTag] || storeConfig.EQ;
 
     const looksLikeShopify =
